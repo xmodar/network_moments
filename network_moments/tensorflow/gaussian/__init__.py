@@ -1,4 +1,4 @@
-'''Network Moments (NMs).
+'''Gaussian Network Moments (GNMs).
 
 Let x be a random variable with some mean M and covariance S.
 x can be multivariate of size (N), so S of size (N, N) and M of size (N).
@@ -13,16 +13,8 @@ For any function acting on x (e.g., f(x)),
 we want to compute its probability density function (i.e., of f(x)).
 A simpler task maybe is to find the n-th-moment of the function for all n > 0.
 
-This package is trying to find closed form expressions for the output
-probabilistic moments of some functions given some input distributions.
-
-It has two main implementations; one on TensorFlow and one on PyTorch.
-To import the TensorFlow sub-package:
-```
-import network_moments.tensorflow as nm
-```
-To import the PyTorch sub-package:
-```
-import network_moments.torch as nm
-```
+This package defines closed form expressions of the output moments
+for some functions given that the input distribution is Gaussian.
 '''
+from ..general import affine
+from . import (relu, affine_relu_affine)

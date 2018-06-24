@@ -10,15 +10,13 @@ def mean(mean, A, b=0.0):
     Args:
         mean: Input mean of size (Batch, Size).
         A: Matrix of size (M, Size).
-        transposed: Whether A is transposed (Size, M).
+        b: Bias of size (Batch, M).
 
     Returns:
         Output mean of Affine for general input (Batch, M).
     '''
-    if not torch.is_tensor(b) and b == 0.0:
-        return mean.matmul(A.t())
-    else:
-        return mean.matmul(A.t()) + b
+    Am = mean.matmul(A.t())
+    return Am if b is None else Am + b
 
 
 def covariance(covariance, A, variance=False):

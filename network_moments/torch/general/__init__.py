@@ -15,14 +15,5 @@ A simpler task maybe is to find the n-th-moment of the function for all n > 0.
 
 This package is trying to find closed form expressions for the output
 probabilistic moments of some functions given some input distributions.
-
-It has two main implementations; one on TensorFlow and one on PyTorch.
-To import the TensorFlow sub-package:
-```
-import network_moments.tensorflow as nm
-```
-To import the PyTorch sub-package:
-```
-import network_moments.torch as nm
-```
 '''
+from . import affine

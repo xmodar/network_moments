@@ -1,4 +1,4 @@
-'''Network Moments (NMs).
+'''Gaussian Network Moments for Rectified Linear Unit (ReLU).
 
 Let x be a random variable with some mean M and covariance S.
 x can be multivariate of size (N), so S of size (N, N) and M of size (N).
@@ -9,20 +9,14 @@ The diagonal of S and C are the variance and second_moment, respectively.
 The second_moment is the expectation of x_squared.
 The variance = second_moment - M_squared.
 
-For any function acting on x (e.g., f(x)),
+For any function f(x) = max(x, 0) acting on x element-wise,
 we want to compute its probability density function (i.e., of f(x)).
 A simpler task maybe is to find the n-th-moment of the function for all n > 0.
 
 This package is trying to find closed form expressions for the output
-probabilistic moments of some functions given some input distributions.
-
-It has two main implementations; one on TensorFlow and one on PyTorch.
-To import the TensorFlow sub-package:
-```
-import network_moments.tensorflow as nm
-```
-To import the PyTorch sub-package:
-```
-import network_moments.torch as nm
-```
+probabilistic moments of ReLU given Gaussian input distribution.
 '''
+from .relu import (mean, zero_mean_correlation, zero_mean_covariance)
+
+
+del relu

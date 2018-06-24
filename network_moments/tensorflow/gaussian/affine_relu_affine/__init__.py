@@ -1,4 +1,4 @@
-'''Gaussian Network Moments (GNMs).
+'''Gaussian Network Moments for Affine-ReLU-Affine Networks.
 
 Let x be a random variable with some mean M and covariance S.
 x can be multivariate of size (N), so S of size (N, N) and M of size (N).
@@ -9,12 +9,13 @@ The diagonal of S and C are the variance and second_moment, respectively.
 The second_moment is the expectation of x_squared.
 The variance = second_moment - M_squared.
 
-For any function acting on x (e.g., f(x)),
+For any function f(x) = B * max(A * x + c1, 0) + c2 acting on x,
 we want to compute its probability density function (i.e., of f(x)).
 A simpler task maybe is to find the n-th-moment of the function for all n > 0.
 
-This module defines closed form expressions of the output moments
-for some functions given that the input distribution is Gaussian.
+This package is trying to find closed form expressions for the output
+probabilistic moments of Affine-ReLU-Affine given Gaussian input distribution.
 '''
-from ..general import affine
-from . import (relu, affine_relu_affine)
+from .affine_relu_affine import (mean, special_variance, special_covariance)
+
+del affine_relu_affine

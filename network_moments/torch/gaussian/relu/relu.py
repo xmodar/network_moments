@@ -22,12 +22,12 @@ def mean(mean, variance, std=False):
         Output mean of ReLU for general Gaussian input (Batch, Size).
     '''
     std = variance if std else torch.sqrt(variance)
-    temp1 = std / math.sqrt(2.0 * math.pi)
-    if not torch.is_tensor(mean) and mean == 0.0:
-        return temp1  # efficient computation when mean is zeros
+    zero_mean = std / math.sqrt(2.0 * math.pi)
+    if mean is None:
+        return zero_mean  # efficient computation when mean is zeros
     u = mean / (math.sqrt(2.0) * std)
-    temp2 = 0.5 * mean * (1.0 + torch.erf(u))
-    return temp1 * torch.exp(-u ** 2.0) + temp2
+    bias = 0.5 * mean * (1.0 + torch.erf(u))
+    return zero_mean * torch.exp(-u ** 2.0) + bias
 
 
 def zero_mean_correlation(covariance, stability=0.0, _std=None):
@@ -65,6 +65,6 @@ def zero_mean_covariance(covariance, stability=0.0):
         Output covariance of ReLU for zero-mean Gaussian input (Size, Size).
     '''
     std = torch.sqrt(diagonal(covariance, 0, -2, -1))
-    mu = mean(0, std, std=True)
+    mu = mean(None, std, std=True)
     corr = zero_mean_correlation(covariance, stability, _std=std)
     return corr - outer(mu)

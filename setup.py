@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name="network_moments",
-    version="0.5",
+    version="0.8",
     description=(
         "A toolkit for computing"
         "some probabilistic moments"

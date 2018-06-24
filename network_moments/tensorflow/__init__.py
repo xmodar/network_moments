@@ -1,4 +1,4 @@
-'''Network Moments (NMs).
+'''Network Moments (NMs) [TensorFlow Implementation].
 
 Let x be a random variable with some mean M and covariance S.
 x can be multivariate of size (N), so S of size (N, N) and M of size (N).
@@ -15,14 +15,5 @@ A simpler task maybe is to find the n-th-moment of the function for all n > 0.
 
 This package is trying to find closed form expressions for the output
 probabilistic moments of some functions given some input distributions.
-
-It has two main implementations; one on TensorFlow and one on PyTorch.
-To import the TensorFlow sub-package:
-```
-import network_moments.tensorflow as nm
-```
-To import the PyTorch sub-package:
-```
-import network_moments.torch as nm
-```
 '''
+from . import (utils, general, gaussian)

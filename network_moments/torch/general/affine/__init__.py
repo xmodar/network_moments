@@ -13,7 +13,7 @@ For any function f(x) = A * x + b acting on x,
 we want to compute its probability density function (i.e., of f(x)).
 A simpler task maybe is to find the n-th-moment of the function for all n > 0.
 
-This module is trying to find closed form expressions for the output
+This package is trying to find closed form expressions for the output
 probabilistic moments of affine transformations given any input distribution.
 '''
 from . import tests
