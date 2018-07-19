@@ -16,5 +16,6 @@ A simpler task maybe is to find the n-th-moment of the function for all n > 0.
 This package defines closed form expressions of the output moments
 for some functions given that the input distribution is Gaussian.
 '''
+from ..utils import utils
 from ..general import affine
 from . import (relu, affine_relu_affine)

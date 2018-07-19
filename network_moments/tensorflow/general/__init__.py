@@ -17,3 +17,4 @@ This package is trying to find closed form expressions for the output
 probabilistic moments of some functions given some input distributions.
 '''
 from . import affine
+from ..utils import utils

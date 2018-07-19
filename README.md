@@ -24,17 +24,13 @@ You need [Jupyter](https://jupyter.org/) to run [tightness](./static/tightness.i
 
 ### Installation
 
-After installing the requirements, clone this repository by running the following in the terminal:
+After installing the requirements, to install or update this package run the following in the terminal:
 
 ```sh
-cd /choose/some/permenant/path/for/the/package/
-git clone https://github.com/ModarTensai/network_moments.git
-pip install -e network_moments
+pip install -U git+https://github.com/ModarTensai/network_moments.git
 ```
 
 Now go to the [tightness notebook](./static/tightness.ipynb) to see how to use this tool with the default backend framework.
-
-To incorporate any new updates to the repository just pull the changes and they will be available for use automatically.
 
 To uninstall the package:
 

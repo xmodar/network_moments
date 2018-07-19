@@ -142,8 +142,10 @@ def linearize(model, at, jacobian_only=False):
         zero_gradients(inputs)
         grad_output.zero_()
         grad_output[:, i] = 1.0
-        outputs.backward(grad_output, retain_graph=True)
-        jacobian[i] = inputs.grad
+        jacobian[i], = torch.autograd.grad(
+            outputs, inputs,
+            grad_outputs=grad_output,
+            retain_graph=True, allow_unused=True)
 
     A = flatten(jacobian.transpose_(0, 1), 2)
     if jacobian_only:
