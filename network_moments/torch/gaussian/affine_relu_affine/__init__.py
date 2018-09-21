@@ -16,6 +16,6 @@ A simpler task maybe is to find the n-th-moment of the function for all n > 0.
 This package is trying to find closed form expressions for the output
 probabilistic moments of Affine-ReLU-Affine given Gaussian input distribution.
 '''
-from .affine_relu_affine import (mean, special_variance, special_covariance)
+from .affine_relu_affine import *
 
 del affine_relu_affine

@@ -1,7 +1,7 @@
 import torch
-from torch import nn
-from torch.autograd import Variable
-from torch.autograd.gradcheck import zero_gradients
+
+
+__all__ = ['epsilon', 'even_zip', 'special_sylvester']
 
 
 def epsilon(dtype=None, device=None, _cache={}):
@@ -16,215 +16,49 @@ def epsilon(dtype=None, device=None, _cache={}):
     return machine_epsilon
 
 
-def diagonal(input, offset=0, dim1=0, dim2=1, view=True):
-    '''Forward compatibility for torch.diagonal() in 0.4.0.'''
-    if torch.__version__ > '0.4.0':
-        return torch.diagonal(input, offset, dim1, dim2)
+def even_zip(*lists):
+    '''Similar to zip() but prioritizes the longest iterable.'''
+    iterators = [iter(el) for el in lists]
+    feed = [None] * len(lists)
+    while True:
+        done = True
+        for i in range(len(iterators)):
+            try:
+                feed[i] = next(iterators[i])
+                done = False
+            except StopIteration:
+                pass
+        if done:
+            break
+        yield tuple(feed)
+
+
+def special_sylvester(A, B, d=None):
+    '''Solves the eqations `AX+XA=B` for positive definite `A`.
+
+    This is a special case of Sylvester equation `AX+XB=C`.
+    https://en.wikipedia.org/wiki/Sylvester_equation
+    A unique solution exists when `A` and `-A` have no common eigenvalues.
+
+    Sources:
+        https://math.stackexchange.com/a/820313
+        Explicit solution of the operator equation A*X+X*A=B:
+        https://core.ac.uk/download/pdf/82315631.pdf
+
+    Args:
+        A: The matrix `A`.
+        B: The matrix `B`.
+        d: The eigenvalues or the singular values of `A` if available.
+           If `d` is provided, `A` must be the eigenvectors, instead.
+
+    Returns:
+        The matrix `X`.
+    '''
+    if d is None:
+        D, Q = torch.eig(A, eigenvectors=True)
+        d = D[:, 0]
     else:
-        out = torch.from_numpy(
-            input.cpu().numpy().diagonal(offset, dim1, dim2))
-        if input.is_cuda:
-            out = out.cuda(input.device)
-        return out if view else out.clone()
-
-
-def mul_diag(A, vec):
-    '''Batch support for matrix diag(vector) product.
-
-    Args:
-        A: General matrix of size (M, Size).
-        vec: Vector of size (Batch, Size).
-
-    Returns:
-        The result of multiplying A with diag(vec) (Batch, M).
-    '''
-    return A * torch.unsqueeze(vec, - 2)
-
-
-def outer(vec1, vec2=None):
-    '''Batch support for vectors outer products.
-
-    This function is broadcast-able,
-    so you can provide batched vec1 or batched vec2 or both.
-
-    Args:
-        vec1: A vector of size (Batch, Size1).
-        vec2: A vector of size (Batch, Size2)
-            if vec2 is None, vec2 = vec1.
-
-    Returns:
-        The outer product of vec1 and vec2 (Batch, Size1, Size2).
-    '''
-    if vec2 is None:
-        vec2 = vec1
-    if len(vec1.size()) == 1 and len(vec2.size()) == 1:
-        return torch.ger(vec1, vec2)
-    else:  # batch outer product
-        if len(vec1.size()) == 1:
-            vec1 = torch.unsqueeze(vec1, 0)
-        if len(vec2.size()) == 1:
-            vec2 = torch.unsqueeze(vec2, 0)
-        vec1 = torch.unsqueeze(vec1, -1)
-        vec2 = torch.unsqueeze(vec2, -2)
-        if vec1.size(0) == vec2.size(0):
-            return torch.bmm(vec1, vec2)
-        else:
-            return vec1.matmul(vec2)
-
-
-def normalize(vec, norm=1.0):
-    '''Normalize a batch of vectors.
-
-    Args:
-        vec: A vector of size (Batch, Size).
-        norm: The new norm (default is 1.0).
-
-    Returns:
-        The normalized vector.
-    '''
-    new_norm = norm / torch.norm(vec, dim=-1)
-    new_vec = vec.view(vec.size(0), -1) * (new_norm.unsqueeze(-1))
-    return new_vec.view(vec.size())
-
-
-def normalize_(vec, norm=1):
-    '''Normalize a batch of vectors in-place.
-
-    Args:
-        vec: A vector of size (Batch, Size).
-        norm: The new norm (default is 1.0).
-
-    Returns:
-        The normalized vector (Batch, size).
-    '''
-    new_norm = norm / torch.norm(vec, dim=-1)
-    vec.view(vec.size(0), -1).mul_(new_norm.unsqueeze(-1))
-    return vec
-
-
-def jacobian(model, at):
-    '''Compute the Jacobian matrix of a model at a given input.
-
-    Args:
-        model: The model as a callable object.
-        at: Batch of points at which to compute the Jacobian (Batch, *Size)
-            Batch must be at least 1.
-
-    Returns
-        The Jacobian of the model at all the points in `at`.
-    '''
-    return linearize(model, at, jacobian_only=True)
-
-
-def linearize(model, at, jacobian_only=False):
-    '''Approximate the output of a model at a given point with an affine function.
-
-    The first order Taylor decomposition of `model` at the point `at` is
-    an affine transformation `f(x) = A * x + b` such that `model(at) = f(at)`.
-    The matrix A is actually the Jacobian matrix of model at the point `at`.
-    Then, b is simply `b = model(at) - A * x`.
-
-    Args:
-        model: The model as a callable object.
-        at: Batch of points (Batch, *Size) at which to compute the Jacobian A
-            Batch must be at least 1.
-        jacobian_only: Whether to return only A.
-
-    Returns
-        The matrix A and the bias vector b.
-    '''
-    inputs = Variable(at, requires_grad=True)
-    outputs = flatten(model(inputs))
-    grad_output = torch.zeros_like(outputs)
-    jacobian = torch.empty(outputs.size(1), *inputs.size(),
-                           dtype=inputs.dtype, device=inputs.device)
-    for i in range(outputs.size(1)):
-        zero_gradients(inputs)
-        grad_output.zero_()
-        grad_output[:, i] = 1.0
-        jacobian[i], = torch.autograd.grad(
-            outputs, inputs,
-            grad_outputs=grad_output,
-            retain_graph=True, allow_unused=True)
-
-    A = flatten(jacobian.transpose_(0, 1), 2)
-    if jacobian_only:
-        return A
-    batch_matmul = A.matmul(flatten(at).unsqueeze(-1)).squeeze(-1)
-    b = outputs.detach() - batch_matmul
-    return A, b
-
-
-class Flatten(nn.Module):
-    def forward(self, inputs, dim=1):
-        '''Flatten a tensor.
-
-        Keep the first `dim`-dimensions untouched and flatten the rest.
-
-        Args:
-            inputs: The input tensor.
-            dim: Number of dimensions to skip.
-
-        Returs:
-            The flattened tensor.
-        '''
-        return inputs.view(*inputs.size()[:dim], -1)
-
-
-flatten = Flatten()
-
-
-def rand_from_eigen(eigen):
-    '''Construct a random matrix with given the eigenvalues.
-
-    To construct such a matrix form the eigenvalue decomposition,
-    (i.e. U * Sigma * U.t()), we need to find a unitary matrix U
-    and Sigma is the diagonal matrix of the eigenvalues `eigen`.
-    The matrix U can be the unitary matrix Q from
-    the QR-decomposition of a randomly generated matrix.
-
-    Args:
-        eigen: A vector of size (Batch, Size).
-
-    Returns:
-        A random matrix of size (Batch, Size, Size).
-    '''
-    size = eigen.size(-1)
-    Q, _ = torch.qr(torch.randn(
-        (size, size), dtype=eigen.dtype, device=eigen.device))
-    return mul_diag(Q, eigen).matmul(Q.t())
-
-
-def rand_definite(size, batch=None, norm=None,
-                  positive=True, semi=False, dtype=None, device=None):
-    '''Random definite matrix.
-
-    A positive/negative definite matrix is a matrix
-    with positive/negative eigenvalues, respectively.
-    They are called semi-definite if the eigenvalues are allowed to be zeros.
-    The eigenvalues are some random vector of unit norm.
-    This vector is what control (positive vs. negative)
-    and (semi-definite vs definite).
-    We multiply this vector by the desired `norm`.
-
-    Args:
-        size: The output matrix is of size (`size`, `size`).
-        batch: Number of matrices to generate.
-        norm: The Frobenius norm of the output matrix.
-        positive: Whether positive-definite or negative-definite.
-        semi: Whether to construct semi-definite or definite matrix.
-        dtype: The data type.
-        device: In which device.
-
-    Returns:
-        Random definite matrices of size (`Batch`, `size`, `size`)
-        and Frobenius norm `norm`.
-    '''
-    shape = size if batch is None else (batch, size)
-    eigen = torch.rand(shape, dtype=dtype, device=device)
-    if not semi:
-        eigen = 1.0 - eigen
-    if not positive:
-        eigen = -eigen
-    eigen = eigen if norm is None else normalize_(eigen, norm)
-    return rand_from_eigen(eigen)
+        Q = A
+    C = Q.t().mm(B.mm(Q))
+    Y = C / (d.view(-1, 1) + d.view(1, -1))
+    return Q.mm(Y.mm(Q.t()))

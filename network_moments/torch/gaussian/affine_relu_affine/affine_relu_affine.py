@@ -2,6 +2,9 @@ from .. import relu
 from ...general import affine
 
 
+__all__ = ['mean', 'special_variance', 'special_covariance']
+
+
 def mean(mean, covariance, A, c1, B, c2, variance=False, precomputed=False):
     '''Output mean of Affine-ReLU-Affine for general Gaussian input.
 

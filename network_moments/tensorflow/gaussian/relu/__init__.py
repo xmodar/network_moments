@@ -16,7 +16,7 @@ A simpler task maybe is to find the n-th-moment of the function for all n > 0.
 This package is trying to find closed form expressions for the output
 probabilistic moments of ReLU given Gaussian input distribution.
 '''
-from .relu import (mean, zero_mean_correlation, zero_mean_covariance)
+from .relu import (mean, zero_mean_covariance)
 
 
 del relu

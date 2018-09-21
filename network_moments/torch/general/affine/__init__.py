@@ -17,16 +17,7 @@ This package is trying to find closed form expressions for the output
 probabilistic moments of affine transformations given any input distribution.
 '''
 from . import tests
-from .affine import (mean, variance, covariance)
 
-import sys
-from types import ModuleType
-module = ModuleType('tests', 'Tests for {}.'.format(affine.__name__))
-module.tightness = tests.tightness
-module.batch_mean = tests.batch_mean
-module.batch_variance = tests.batch_variance
-module.batch_covariance = tests.batch_covariance
-tests = module
-sys.modules[tests.__name__] = tests
+from .affine import *
 
-del (sys, affine, module, ModuleType)
+del affine

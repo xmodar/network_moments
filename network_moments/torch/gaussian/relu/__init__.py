@@ -17,16 +17,7 @@ This package is trying to find closed form expressions for the output
 probabilistic moments of ReLU given Gaussian input distribution.
 '''
 from . import tests
-from .relu import (mean, zero_mean_correlation, zero_mean_covariance)
 
-import sys
-from types import ModuleType
-module = ModuleType('tests', 'Tests for {}.'.format(relu.__name__))
-module.tightness = tests.tightness
-module.batch_mean = tests.batch_mean
-module.batch_zero_mean_correlation = tests.batch_zero_mean_correlation
-module.batch_zero_mean_covariance = tests.batch_zero_mean_covariance
-tests = module
-sys.modules[tests.__name__] = tests
+from .relu import *
 
-del (sys, relu, module, ModuleType)
+del relu

@@ -5,7 +5,7 @@ from setuptools import setup, find_packages
 name = 'network_moments'
 setup(
     name=name,
-    version='0.8.5',
+    version='0.9.0',
     description=(
         'A toolkit for computing some probabilistic moments '
         'of deep neural networks'

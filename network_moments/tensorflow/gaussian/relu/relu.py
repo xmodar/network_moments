@@ -30,27 +30,6 @@ def mean(mean, variance, std=False):
     return zero_mean * tf.exp(-u ** 2.0) + bias
 
 
-def zero_mean_correlation(covariance, stability=0.0, _std=None):
-    '''Output correlation of ReLU for zero-mean Gaussian input.
-
-    f(x) = max(x, 0).
-
-    Args:
-        covariance: Input covariance matrix (Size, Size).
-        stability: For accurate results this should be zero
-            if used in training, use a value like 1e-4 for stability.
-
-    Returns:
-        Output correlation of ReLU for zero-mean Gaussian input (Size, Size).
-    '''
-    S = outer(tf.sqrt(tf.matrix_diag_part(covariance))
-              if _std is None else _std)  # use precomputed _std if provided
-    V = tf.clip_by_value(covariance / S, stability - 1.0, 1.0 - stability)
-    temp1 = covariance * tf.asin(V)
-    temp2 = S * tf.sqrt(1.0 - (V ** 2.0))
-    return (temp1 + temp2) / (2.0 * math.pi) + covariance / 4.0
-
-
 def zero_mean_covariance(covariance, stability=0.0):
     '''Output covariance of ReLU for zero-mean Gaussian input.
 
@@ -64,7 +43,8 @@ def zero_mean_covariance(covariance, stability=0.0):
     Returns:
         Output covariance of ReLU for zero-mean Gaussian input (Size, Size).
     '''
-    std = tf.sqrt(tf.matrix_diag_part(covariance))
-    mu = mean(None, std, std=True)
-    corr = zero_mean_correlation(covariance, stability, _std=std)
-    return corr - outer(mu)
+
+    S = outer(tf.sqrt(tf.matrix_diag_part(covariance)))
+    V = tf.clip_by_value(covariance / S, stability - 1.0, 1.0 - stability)
+    Q = tf.acos(-V) * V + tf.sqrt(1.0 - (V**2.0)) - 1.0
+    return S * Q * (1.0 / (2.0 * math.pi))

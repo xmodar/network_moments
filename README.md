@@ -1,6 +1,6 @@
 # Network Moments
 
-Network Moments is a toolkit that enables computing some probabilistic moments of deep neural networks given a specific input distribution. The current implemetation allows you to compute the first and second Gaussian network moments (GNM) of affine-ReLU-affine networks i.e., the output mean and variance subject to Gaussian input.
+Network Moments is a toolkit that enables computing some probabilistic moments of deep neural networks given a specific input distribution. The current implementation allows you to compute the first and second Gaussian network moments (GNM) of affine-ReLU-affine networks i.e., the output mean and variance subject to Gaussian input.
 
 <img src="./static/theorems.svg" alt="theorems"/>
 
@@ -12,7 +12,7 @@ Network Moments was developed and tested with the following:
 
  - [Python](https://www.python.org/) v3.6.3+
  - **Option 1**: [`PyTorch`](./network_moments/torch/)
-   - [torch](https://pytorch.org/) v0.4.0+
+   - [torch](https://pytorch.org/) v0.4.1+
    - (Optional) [torchvision](https://github.com/pytorch/vision) v0.2.1+
  - **Option 2**: [`TensorFlow`](./network_moments/tensorflow/)
    - [numpy](http://www.numpy.org) v1.14.2+
@@ -57,7 +57,7 @@ Please, refer to [tensorflow tests notebook](./static/tensorflow_tests.ipynb) fo
 
 ### Cite
 
-This is the official implementation of the method described in [this paper](http://openaccess.thecvf.com/content_cvpr_2018/html/Bibi_Analytic_Expressions_for_CVPR_2018_paper.html) (checkout the [poster](./static/poster.pdf)):
+This is the official implementation of the method described in [this paper](http://openaccess.thecvf.com/content_cvpr_2018/html/Bibi_Analytic_Expressions_for_CVPR_2018_paper.html) (checkout the [poster](https://drive.google.com/file/d/1S_HurI9vwhhqyzAabDiaq0ZJBPBrV_xh/view)):
 
 ```bibtex
 @InProceedings{Bibi_2018_CVPR,

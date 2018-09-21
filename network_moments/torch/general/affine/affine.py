@@ -2,6 +2,9 @@ import torch
 from ...utils import mul_diag
 
 
+__all__ = ['mean', 'covariance', 'variance']
+
+
 def mean(mean, A, b=0.0):
     '''Output mean of Affine for general input.
 
@@ -55,5 +58,10 @@ def variance(covariance, A, variance=False):
     Returns:
         Output variance of Affine for general input (Batch, M).
     '''
-    B = mul_diag(A, covariance) if variance else A.matmul(covariance)
-    return torch.sum(B * A, -1)
+    if variance:
+        if covariance.dim() == 1:
+            return (A * A).mv(covariance)
+        else:
+            return covariance.matmul((A * A).t())
+    else:
+        return torch.sum(A.matmul(covariance) * A, -1)
