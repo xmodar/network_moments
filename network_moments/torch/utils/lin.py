@@ -70,7 +70,7 @@ def jacobian(model, at):
 
 
 def linearize(model, at, jacobian_only=False):
-    '''Approximate the output of a model at a given point with an affine function.
+    '''Affine approximation for a model at a given point.
 
     The first order Taylor decomposition of `model` at the point `at` is
     an affine transformation `f(x) = A * x + b` such that `model(at) = f(at)`.
@@ -86,24 +86,26 @@ def linearize(model, at, jacobian_only=False):
     Returns
         The matrix A and the bias vector b.
     '''
-    inputs = torch.autograd.Variable(at, requires_grad=True)
-    outputs = flatten(model(inputs))
-    grad_output = torch.empty_like(outputs)
-    jacobian = torch.empty(outputs.size(1), *inputs.size(),
-                           dtype=inputs.dtype, device=inputs.device)
-    for i in range(outputs.size(1)):
-        if inputs.grad is not None:
-            inputs.grad.data.zero_()
-        grad_output.zero_()
-        grad_output[:, i] = 1.0
-        jacobian[i, ...], = torch.autograd.grad(
-            outputs, inputs,
-            grad_outputs=grad_output,
-            retain_graph=i + 1 < outputs.size(1),
-            allow_unused=True)
-    A = flatten(jacobian.transpose_(0, 1), 2)
-    if jacobian_only:
-        return A
-    at = at.view(at.size(0), -1, 1)
-    b = outputs.data - A.bmm(at).squeeze_(-1)
-    return A, b
+    with torch.enable_grad():
+        inputs = torch.autograd.Variable(at, requires_grad=True)
+        outputs = flatten(model(inputs))
+    with torch.no_grad():
+        grad_output = torch.empty_like(outputs)
+        jac = torch.empty(outputs.size(1), *inputs.size(),
+                          dtype=inputs.dtype, device=inputs.device)
+        for i in range(outputs.size(1)):
+            if inputs.grad is not None:
+                inputs.grad.data.zero_()
+            grad_output.zero_()
+            grad_output[:, i] = 1
+            jac[i, ...], = torch.autograd.grad(
+                outputs, inputs,
+                grad_outputs=grad_output,
+                retain_graph=i + 1 < outputs.size(1),
+                allow_unused=True)
+        A = flatten(jac.transpose_(0, 1), 2)
+        if jacobian_only:
+            return A
+        at = at.view(at.size(0), -1, 1)
+        b = outputs.data - A.bmm(at).squeeze_(-1)
+        return A, b

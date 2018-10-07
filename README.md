@@ -13,7 +13,7 @@ Network Moments was developed and tested with the following:
  - [Python](https://www.python.org/) v3.6.3+
  - **Option 1**: [`PyTorch`](./network_moments/torch/)
    - [torch](https://pytorch.org/) v0.4.1+
-   - (Optional) [torchvision](https://github.com/pytorch/vision) v0.2.1+
+   - [torchvision](https://github.com/pytorch/vision) v0.2.1+
  - **Option 2**: [`TensorFlow`](./network_moments/tensorflow/)
    - [numpy](http://www.numpy.org) v1.14.2+
    - [tensorflow](https://www.tensorflow.org/) v1.8.0+

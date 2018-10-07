@@ -17,5 +17,5 @@ This package defines closed form expressions of the output moments
 for some functions given that the input distribution is Gaussian.
 '''
 from . import (relu, affine_relu_affine)
-from .. import utils
+from .. import (utils, net)
 from ..general import affine

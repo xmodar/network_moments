@@ -1,18 +1,21 @@
 import torch
+import importlib
 
 
-__all__ = ['epsilon', 'even_zip', 'special_sylvester']
+__all__ = ['verbosify', 'epsilon', 'even_zip', 'special_sylvester']
 
 
-def epsilon(dtype=None, device=None, _cache={}):
+def epsilon(dtype=None, device=None):
     '''Machine epsilon for a specific torch.dtype.'''
-    if dtype in _cache:
-        return _cache[dtype, device]
+    if not hasattr(epsilon, 'cache'):
+        epsilon.cache = {}
+    if dtype in epsilon.cache:
+        return epsilon.cache[dtype, device]
     value = one = torch.ones([], dtype=dtype, device=device)
     while one + value != one:
         machine_epsilon = value
         value = value >> 1
-    _cache[dtype, device] = machine_epsilon
+    epsilon.cache[dtype, device] = machine_epsilon
     return machine_epsilon
 
 
@@ -22,9 +25,9 @@ def even_zip(*lists):
     feed = [None] * len(lists)
     while True:
         done = True
-        for i in range(len(iterators)):
+        for i, itr in enumerate(iterators):
             try:
-                feed[i] = next(iterators[i])
+                feed[i] = next(itr)
                 done = False
             except StopIteration:
                 pass
@@ -62,3 +65,41 @@ def special_sylvester(A, B, d=None):
     C = Q.t().mm(B.mm(Q))
     Y = C / (d.view(-1, 1) + d.view(1, -1))
     return Q.mm(Y.mm(Q.t()))
+
+
+def _verbosify(iterable):
+    # shows only the iteration number and how many iterations are left
+    len_iterable = len(iterable) if hasattr(iterable, '__len__') else None
+    for i, element in enumerate(iterable, 1):
+        if len_iterable is None:
+            print('\rIteration #{}'.format(i), end='')
+        else:
+            print('\rIteration #{} out of {} iterations [Done {:.2f}%]'.format(
+                i, len_iterable, 100 * i / len_iterable), end='')
+        yield element
+    print('\r', end='', flush=True)
+
+
+def verbosify(iterable, leave=False, file=None, **kwargs):
+    '''Utility function to print the progress of a for-loop.
+
+    It is recommended that you install `tqdm` package.
+    It will look for this package and try to use it.
+    Otherwise, it will do a simplistic non-efficient implementation.
+
+    Args:
+        iterable: Of the for-loop (e.g., range(3)).
+        leave: Whether to leave the progress print out after finishing.
+        file: To which stream we will print the progress.
+        kwargs: It will be passed to `tqdm.tqdm()` if available.
+
+    Returns:
+        Iterator over `iterable`.
+    '''
+    # try to use tqdm (shows the speed and the remaining time left)
+    if importlib.util.find_spec('tqdm') is not None:
+        tqdm = importlib.import_module('tqdm').tqdm
+        if file is None:
+            file = importlib.import_module('sys').stdout
+        return tqdm(iterable, leave=leave, file=file, **kwargs)
+    return iter(_verbosify(iterable))

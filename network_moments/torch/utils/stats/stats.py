@@ -4,7 +4,7 @@ import torch
 
 __all__ = ['cov', 'skewness_score', 'kurtosis_score', 'percentile',
            'inter_quartile_range', 'num_hist_bins', 'integrate_area',
-           'normalized_histogram', 'hist_as_func',
+           'normalized_histogram', 'hist_as_func', 'trapz',
            'estimate_pdf', 'pdf_similarity']
 
 
@@ -15,6 +15,45 @@ def _indexer_into(x, dim=0, keepdim=False):
         out = x[[slice(None, None)] * dim + [i, ...]]
         return out.unsqueeze(dim) if keepdim and x.dim() != out.dim() else out
     return indexer
+
+
+def _shifted_slices(x, dim=-1):
+    '''return x[..., 1:, ...], x[..., :-1, ...].'''
+    slice1 = [slice(None)] * x.dim()
+    slice2 = [slice(None)] * x.dim()
+    slice1[dim] = slice(1, None)
+    slice2[dim] = slice(None, -1)
+    return x[slice1], x[slice2]
+
+
+def trapz(y, x=None, dx=1, dim=-1):
+    '''Integrate along the given axis using the composite trapezoidal rule.
+
+    Equivalent to numpy.trapz().
+
+    Args:
+        y: Input tensor to integrate.
+        x: The sample points corresponding to the `y` values.
+            If it is None, the sample points are assumed to be evenly
+            spaced `dx` apart.
+        dx: The spacing between the sample points when `x` is None.
+        dim: The dimension along which to integrate.
+
+    Returns:
+        Definite integral as apporximated by trapezodial rule.
+    '''
+    if x is None:
+        d = dx
+    elif x.dim() == 1:
+        d = x[1:] - x[:-1]
+        shape = [1] * y.dim()
+        shape[dim] = d.size(0)
+        d = d.view(shape)
+    else:
+        d1, d2 = _shifted_slices(x, dim)
+        d = d1 - d2
+    y1, y2 = _shifted_slices(y, dim)
+    return (d * (y1 + y2) / 2).sum(dim)
 
 
 def percentile(x, q, dim=0, keepdim=False, sort=True):
@@ -31,8 +70,8 @@ def percentile(x, q, dim=0, keepdim=False, sort=True):
         The `q`th percentile of the data.
     '''
     if sort:
-        x = x.sort(dim)[0]
-    if not (0 <= q <= 100):
+        x = x.data.sort(dim)[0]
+    if not 0 <= q <= 100:
         raise ValueError('`q` must be in between 0 and 100.')
     value = (q / 100) * x.size(dim) - 1
     if value < 0:
@@ -40,7 +79,7 @@ def percentile(x, q, dim=0, keepdim=False, sort=True):
     index = int(value)
     frac = value - index
     next_index = min(index + 1, x.size(dim) - 1)
-    X = _indexer_into(x, dim, keepdim)
+    X = _indexer_into(x.data, dim, keepdim)
     return (1 - frac) * X(index) + frac * X(next_index)
 
 
@@ -57,7 +96,7 @@ def inter_quartile_range(x, dim=0, keepdim=False, sort=True):
         The IQR of the data.
     '''
     if sort:
-        x = x.sort(dim)[0]
+        x = x.data.sort(dim)[0]
     q1 = percentile(x, 25, dim=dim, keepdim=keepdim, sort=False)
     q3 = percentile(x, 75, dim=dim, keepdim=keepdim, sort=False)
     return q3 - q1
@@ -79,11 +118,11 @@ def num_hist_bins(x, min_bins=1, max_bins=1e6,
         The appropriate number of bins to histogram the given data.
     '''
     if sort:
-        x = x.sort(dim)[0]
+        x = x.data.sort(dim)[0]
     long = lambda v: torch.tensor(v, dtype=torch.long, device=x.device)
     iqr = inter_quartile_range(x, dim=dim, keepdim=keepdim, sort=False)
     bin_width = 2 * x.size(dim)**(-1 / 3) * iqr
-    X = _indexer_into(x, dim, keepdim)
+    X = _indexer_into(x.data, dim, keepdim)
     num_bins = ((X(-1) - X(0)) / bin_width).round().long()
     return num_bins.clamp(min=long(min_bins), max=long(max_bins))
 
@@ -195,7 +234,7 @@ def estimate_pdf(x, sort=True):
     Returns:
         The PDF function (output of `hist_as_func()`).
     '''
-    hist, bounds = normalized_histogram(x, sort=sort)
+    hist, bounds = normalized_histogram(x.data, sort=sort)
     return hist_as_func(hist, bounds, filler=0)
 
 
@@ -249,6 +288,7 @@ def cov(m, rowvar=False):
 
 def _x_n_dim(x, dim=None):
     '''Helper for skewness_score and kurtosis_score.'''
+    x = x.data
     if dim is None:
         dim = 0
         n = x.numel()

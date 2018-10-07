@@ -1,5 +1,4 @@
 import torch
-import scipy.linalg
 from .utils import even_zip, special_sylvester
 
 
@@ -80,16 +79,18 @@ def outer(vec1, vec2=None):
             return vec1.matmul(vec2)
 
 
-def normalize(vec, norm=1.0):
+def normalize(vec, norm=1):
     '''Normalize a batch of vectors.
 
     Args:
         vec: A vector of size (Batch, Size).
-        norm: The new norm (default is 1.0).
+        norm: The new norm (default is 1).
 
     Returns:
         The normalized vector.
     '''
+    if not torch.is_tensor(norm):
+        norm = torch.tensor(norm, dtype=vec.dtype, device=vec.device)
     new_norm = norm / torch.norm(vec, dim=-1)
     new_vec = vec.view(vec.size(0), -1) * (new_norm.unsqueeze(-1))
     return new_vec.view(vec.size())
@@ -100,11 +101,13 @@ def normalize_(vec, norm=1):
 
     Args:
         vec: A vector of size (Batch, Size).
-        norm: The new norm (default is 1.0).
+        norm: The new norm (default is 1).
 
     Returns:
         The normalized vector (Batch, size).
     '''
+    if not torch.is_tensor(norm):
+        norm = torch.tensor(norm, dtype=vec.dtype, device=vec.device)
     new_norm = norm / torch.norm(vec, dim=-1)
     vec.view(vec.size(0), -1).mul_(new_norm.unsqueeze(-1))
     return vec
@@ -121,22 +124,25 @@ def map_batch(func, *inputs):
         Similar to `torch.stack([func(*x) for x in zip(*inputs)])` but faster.
         In case `func` returns a tuple, this function will also return a tuple.
     '''
+    # compute the output of the first instance in the batch
     inputs = list(even_zip(*inputs))
     res = func(*inputs[0])
     single = not isinstance(res, tuple)
     as_tuple = (lambda x: (x,)) if single else (lambda x: x)
     res = as_tuple(res)
+
+    # if more outputs are expected, keep computing them
     if len(inputs) == 1:
         out = tuple(r.unsqueeze(0) for r in res)
     else:
         out = tuple(torch.empty(len(inputs), *r.size(),
                                 device=r.device, dtype=r.dtype)
                     for r in res)
-        for i in range(len(inputs)):
+        for i, args in enumerate(inputs):
             if i > 0:
-                res = as_tuple(func(*inputs[i]))
-            for r, o in zip(res, out):
-                o[i, ...] = r
+                res = as_tuple(func(*args))
+            for result, output in zip(res, out):
+                output[i, ...] = result
     return out[0] if single else out
 
 
@@ -165,70 +171,24 @@ class MatrixSquareRoot(torch.autograd.Function):
           zero eigenvalues.
     '''
     @staticmethod
-    def forward(ctx, input):
+    def forward(ctx, matrix):
         '''Computes the square root of a matrix.
 
+        This was adopted from: https://github.com/steveli/pytorch-sqrtm
+
+        Multiple different implementations can be found here:
+        https://github.com/msubhransu/matrix-sqrt
+
         Args:
-            input: The matrix.
+            matrix: The matrix.
 
         Returns:
-            The square root of the `input` matrix.
+            The square root of the `matrix` matrix.
         '''
-        # Implementation #1: using scipy (most accurate)
-        # source: https://github.com/steveli/pytorch-sqrtm
-        m = input.data.cpu().numpy()
-        out = torch.from_numpy(scipy.linalg.sqrtm(m).real).type_as(input)
-        ctx.save_for_backward(out)
-        return out
-        # Implementation #2: using SVD (accurate but slow)
-        # https://github.com/msubhransu/matrix-sqrt/blob/master/matrix_sqrt.py
-        # U, s, V = input.data.svd()
-        # out = (U*s.sqrt().unsqueeze(-2)).mm(V.t())  # U*diag(sqrt(s))*V^
-        # ctx.save_for_backward(U, s)
-        # return out
-        # Implementation #3: using Eigen decomposition (not accurate but fast)
-        # https://en.wikipedia.org/wiki/Square_root_of_a_matrix#By_diagonalization
-        # D, Q = torch.eig(input.data, eigenvectors=True)
-        # d = D[:,0].sqrt()
-        # out = (Q*d.unsqueeze(-2)).mm(Q.t())  # Q*diag(d)*Q^
-        # ctx.save_for_backward(Q, d)
-        # return out
-        # Implementation #4: using Newton-Schulz iterations (very accurate)
-        # https://github.com/msubhransu/matrix-sqrt/blob/master/matrix_sqrt.py
-        # normA = A.norm()
-        # A = A / normA
-        # I = Z = eye()
-        # repeat until convergence (T approaches eye()):
-        #   T = 0.5 * (3*I - Z*A)
-        #   A = A*T
-        #   Z = T*Z
-        # A = A*normA
-        # single_matrix = input.dim() == 2
-        # if single_matrix:
-        #     input = input.view(1, *input.size())
-        # batch_size, dim, _ = input.shape
-        # normA = input.view(batch_size, -1, 1, 1).norm(dim=1)
-        # Z = torch.eye(dim, dtype=input.dtype, device=input.device)
-        # Z = Z.unsqueeze_(0).repeat(batch_size, 1, 1)
-        # identity = Z
-        # error = float('inf')
-        # out = input.data / normA
-        # start_checking = max(dim ** 0.45, 10)  # heuristic
-        # for i in range(min(10, int(dim ** 0.6))):  # heuristic
-        #     T = 0.5 * (identity - Z.bmm(out))
-        #     if i > start_checking:
-        #         newError = T.abs().max().item()
-        #         if newError >= error:  # heuristic
-        #             break
-        #         error = newError
-        #     T += identity
-        #     out = out.bmm(T)
-        #     Z = T.bmm(Z)
-        # out *= normA.sqrt()
-        # if single_matrix:
-        #     out.squeeze_(0)
-        # ctx.save_for_backward(out)
-        # return out
+        # scipy.linalg.sqrtm(matrix.data.cpu().numpy()).real
+        U, s, V = matrix.data.svd()
+        ctx.save_for_backward(U, s.sqrt_())
+        return U.mm(V.t_().mul_(s.unsqueeze(-1)))  # U*diag(sqrt(s))*V^T
 
     @staticmethod
     def backward(ctx, grad_output):

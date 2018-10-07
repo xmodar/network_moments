@@ -101,9 +101,9 @@ def fit(x, sigmas=5, correct=True, sort=True):
         std: The standard deviation of the Gaussian fit
         similarity: The simialrity between `pdf` and `fit`}
     '''
-    std = x.std()
-    mean = x.mean()
-    pdf = estimate_pdf(x, sort=sort)
+    std = x.data.std()
+    mean = x.data.mean()
+    pdf = estimate_pdf(x.data, sort=sort)
     lower = min(pdf.bounds[0], mean - sigmas * std)
     upper = max(pdf.bounds[1], mean + sigmas * std)
     bounds = (lower, upper)
@@ -128,20 +128,26 @@ def fit(x, sigmas=5, correct=True, sort=True):
     return results
 
 
-def gaussianity(x, dim=0, keepdim=False):
+def gaussianity(x, dim=0, std_threshold=0, keepdim=False):
     '''Computes the closeness of data samples to Gaussian distribution.
 
     Args:
         x: The tensor containing the sample to be tested.
         dim: Dimension along which to do the operation.
+        std_threshold: If the std of x is less than the threshold, output 0.
         keepdim: Whether to keep the dimension of operation.
 
     Returns:
         A tensor of similarity values between 0 to 1 (Gaussian).
     '''
-    X = x.transpose(0, dim).view(x.size(dim), -1)
-    out = torch.tensor(tuple(fit(X[:, i])['similarity']
-                             for i in range(X.size(1))),
+    X = x.data.transpose(0, dim).view(x.size(dim), -1)
+
+    def _fit(y):
+        gf = fit(y)
+        if gf['std'] < std_threshold:
+            return 0
+        return gf['similarity']
+    out = torch.tensor(tuple(_fit(X[:, i]) for i in range(X.size(1))),
                        dtype=x.dtype, device=x.device)
     size = x.size()[:dim] + ((1,) if keepdim else ()) + x.size()[dim + 1:]
     return out.view(size)

@@ -1,10 +1,55 @@
 import math
 import torch
-from ...utils import outer
+from ...utils import outer, map_batch
 from ...utils.stats.gaussian import normal_density
 
 
-__all__ = ['moments', 'mean', 'variance', 'zero_mean_covariance']
+__all__ = ['moments', 'batch_moments',
+           'mean', 'variance', 'zero_mean_covariance']
+
+
+def batch_moments(mu, var, mean=True, covariance=True, diagonal=False):
+    '''Compute the mean and covariance of ReLU applied on Gaussian input.
+
+    The off-diagonals of the output covariance is an approximation
+    if `mu` is non-zero, which is equivalent to that of zero `mu`.
+
+    Args:
+        mu: Input mean (Batch, *size).
+        var: Input covariance matrix or variance (Batch, size[, size]).
+        mean: Whether to output the mean.
+        covariance: Whether to output the covariance.
+        diagonal: Whether to output the variance if `covariance` is True.
+
+    Returns:
+        Output mean and covariance of ReLU applied on Gaussian input.
+    '''
+    size = mu.size()
+    mu = mu.view(size[0], -1)
+    dvar = var.diagonal(dim1=-2, dim2=-1) if var.dim() > 2 else var
+
+    if not mean and not covariance:
+        mean = covariance = True
+    if not covariance:
+        return moments(mu, dvar, variance=False).view(*size)
+
+    if mean:
+        out_mu, out_var = moments(mu, dvar)
+    else:
+        out_var = variance(mu, dvar)
+
+    if not diagonal:
+        if var.dim() > 2:
+            cov = zero_mean_covariance(var)
+            cov.diagonal(dim1=-2, dim2=-1).copy_(out_var)
+            out_var = cov
+        else:
+            out_var = map_batch(lambda x: x.diag(), out_var)
+
+    if not mean:
+        return out_var
+
+    return out_mu.view(*size), out_var
 
 
 def moments(mu, var, mean=True, variance=True, std=False):
@@ -39,6 +84,7 @@ def moments(mu, var, mean=True, variance=True, std=False):
     var = var ** 2.0 if std else var
     relu_second_moment = (mu**2.0 + var) * cdf + mu * zero_mean
     relu_variance = relu_second_moment - relu_mean**2.0
+    relu_variance.clamp_(min=0)  # for numerical stability
     if not mean:
         return relu_variance
     return relu_mean, relu_variance
@@ -103,4 +149,7 @@ def zero_mean_covariance(covariance, stability=0.0):
     S = outer(torch.sqrt(torch.diagonal(covariance, 0, -2, -1)))
     V = (covariance / S).clamp_(stability - 1.0, 1.0 - stability)
     Q = torch.acos(-V) * V + torch.sqrt(1.0 - (V**2.0)) - 1.0
-    return S * Q * (1.0 / (2.0 * math.pi))
+    cov = S * Q * (1.0 / (2.0 * math.pi))
+    # handle degenerate case when we have zero variance
+    cov[cov != cov] = 0  # replace nans with zeros
+    return cov
