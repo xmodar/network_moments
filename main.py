@@ -46,7 +46,7 @@ def test_cov_with_terms(dim, cov_batch=0, mean_batch=0, zero_mean=False):
         o_covariance, _ = relu_cov_mean(covariance, mean, num_terms)
         value = error(o_covariance, r_covariance).mean().item()
         print(num_terms, value)
-        if value == 0:
+        if value == 0 or value != value:
             break
 
 

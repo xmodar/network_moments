@@ -14,7 +14,11 @@ __all__ = [
     'relu_std_mean',
     'relu_var',
     'relu_std',
+
+    # utility functions
+    'gaussian_distribution',
     'rand_matrix',
+    'cov_mean',
 ]
 
 
@@ -123,3 +127,26 @@ def rand_matrix(*shape, norm=None, trace=None, dtype=None, device=None):
     elif trace is not None:
         eigen *= trace / eigen.sum(dim=-1, keepdim=True)
     return (q * eigen.unsqueeze(-2)) @ q.transpose(-1, -2)
+
+
+def gaussian_distribution(covariance, mean=None):
+    """Wrap torch.distributions.MultivariateNormal to any sample shape."""
+    if not torch.is_tensor(covariance):
+        covariance = rand_matrix(covariance)
+    if mean is None:
+        mean = covariance.new_zeros(covariance.shape[-1])
+    dist = torch.distributions.MultivariateNormal(mean.view(-1), covariance)
+    dist.draw = lambda *batch: dist.sample(batch).view(*batch, *mean.shape)
+    dist.center = mean
+    return dist
+
+
+def cov_mean(samples, unbiased=False, keepdim=False):
+    """Compute the covariance matrix and mean of data samples."""
+    mean = samples.mean(0, keepdim=True)
+    factor = 1 / (samples.shape[0] - bool(unbiased))
+    samples = samples - mean
+    covariance = factor * (samples.transpose(-1, -2) @ samples)
+    if keepdim:
+        return covariance.unsqueeze(0), mean
+    return covariance, mean.squeeze(0)

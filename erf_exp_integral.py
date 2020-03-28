@@ -102,8 +102,9 @@ def erf_exp_integral(a, b, c, n=-1):
         return torch_erf_exp_integral(a, b, c)
     y = definite_differece(a, b, c, n)
     # handle inaccurate cases
-    idx = (a.abs() >= 1).expand_as(y)
-    a, b, c = a.expand_as(y)[idx], b.expand_as(y)[idx], c.expand_as(y)[idx]
+    idx = a.abs() >= 1
+    idx, a, b, c = torch.broadcast_tensors(idx, a, b, c)
+    a, b, c = a[idx], b[idx], c[idx]
     acb, a_sign = a * c + b, a.sign()
     v = definite_differece(1 / a.abs(), -b / a, acb * a_sign, n)
     v = a_sign * (sqrt(pi / 4) - v) - sqrt(pi / 4) * acb.erf() * c.erf()
