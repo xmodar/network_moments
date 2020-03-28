@@ -12,10 +12,16 @@ __all__ = [
     'relu_var_mean',
     'relu_mean',
 
-    # auxilary functions
+    # auxiliary functions
     'relu_std_mean',
     'relu_var',
     'relu_std',
+
+    # utility functions
+    'rand_matrix',
+    'non_differentiable',
+    'numpy_erf_exp_integral',
+    'torch_erf_exp_integral',
 ]
 
 
@@ -50,6 +56,7 @@ def relu_cov_mean(covariance, mean=None):
     d = lambda x: x.diagonal(0, -1, -2)  # diagonal of a matrix
     t = lambda x: x.transpose(-1, -2)  # transpose of a matrix
     o = lambda x, y: x.unsqueeze(-1) * y.unsqueeze(-2)  # vector outer product
+    m = lambda x, y: x * y.unsqueeze(-2)  # multiply matrix columns by a vector
 
     std = d(covariance).sqrt()
     std_outer = o(std, std)
@@ -69,16 +76,16 @@ def relu_cov_mean(covariance, mean=None):
     sqrt_sigma_det = sigma_det.sqrt()
     term1 = (1 / (2 * pi)) * sqrt_sigma_det * (-0.5 * quadratic).exp()
 
-    mean_std = sqrt(1 / 2) * mean / std
+    mean_std = sqrt(1 / 2) * (mean / std)
     n = lambda x, y, z: (sqrt(1 / 2) * t(x) - y) / z
-    sigma_tilde_mean = n(std_x_mean, mean_std * covariance, sqrt_sigma_det)
+    sigma_tilde_mean = n(std_x_mean, m(covariance, mean_std), sqrt_sigma_det)
 
     pdf = (1 / sqrt(2 * pi)) * (-mean_std.pow(2)).exp()
-    term2 = (1 / 2) * t(std_x_mean) * pdf * (1 + sigma_tilde_mean.erf())
+    term2 = (1 / 2) * m(t(std_x_mean), pdf) * (1 + sigma_tilde_mean.erf())
 
     cdf = (1 / 2) * (1 + mean_std.erf())
     mean_sigma = mean_outer + covariance
-    term4 = (1 / 2) * mean_sigma * cdf
+    term4 = (1 / 2) * m(mean_sigma, cdf)
 
     omega = term1 + term2 + t(term2) + term4
 
@@ -86,7 +93,7 @@ def relu_cov_mean(covariance, mean=None):
     a = irho * covariance / std_outer
     b = irho * mean_std.unsqueeze(-1)
     c = -mean_std.unsqueeze(-2)
-    b[irho == float('inf')] = 0
+    b[(irho == float('inf')).expand_as(b)] = 0
     integration = torch_erf_exp_integral(a, b, c)
 
     correlation = omega + (1 / sqrt(4 * pi)) * mean_sigma * integration
@@ -139,27 +146,50 @@ def relu_std(std, mean=None):
     return relu_var_mean(std, mean)[0].sqrt()
 
 
+def rand_matrix(*shape, norm=None, trace=None, dtype=None, device=None):
+    """Generate a random positive definite matrix."""
+    assert None in (norm, trace), 'provide only a norm or a trace or neither'
+    eigen = 1 - torch.rand(*shape, dtype=dtype, device=device)
+    q = eigen.new(*eigen.shape, eigen.shape[-1]).normal_().qr().Q
+    if norm is not None:
+        eigen *= norm / eigen.norm(dim=-1, keepdim=True)
+    elif trace is not None:
+        eigen *= trace / eigen.sum(dim=-1, keepdim=True)
+    return (q * eigen.unsqueeze(-2)) @ q.transpose(-1, -2)
+
+
 if __name__ == '__main__':
 
-    def __test(dim, zero_mean=False):
-        mean = torch.randn(dim).double() * (not zero_mean)
-        covariance = torch.randn(dim, dim).double().qr().Q
-        covariance = covariance @ covariance.t()
+    def __test(dim, cov_batch=0, mean_batch=0, zero_mean=False):
+        print(dict(cbatch=cov_batch, mbatch=mean_batch, zmean=zero_mean))
+        cbatch = () if cov_batch == 0 else (cov_batch,)
+        mbatch = () if mean_batch == 0 else (mean_batch,)
+        covariance = rand_matrix(*cbatch, dim, dtype=torch.float64)
         std = covariance.diagonal(0, -1, -2).sqrt()
+        mean = std.new(*mbatch, dim) * (not zero_mean)
 
         r_covariance, r_mean = relu_cov_mean(covariance, mean)
 
         o_mean = relu_mean(std, None if zero_mean else mean)
-        print(torch.allclose(o_mean, r_mean))
+        print('mean', torch.allclose(o_mean, r_mean))
 
         o_var, o_mean = relu_var_mean(std, None if zero_mean else mean)
-        print(torch.allclose(o_mean, r_mean))
-        print(torch.allclose(o_var, r_covariance.diagonal(0, -1, -2)))
+        print('var', torch.allclose(o_var, r_covariance.diagonal(0, -1, -2)))
+        print('mean', torch.allclose(o_mean, r_mean))
 
         if zero_mean:
             o_covariance, o_mean = relu_cov_mean(covariance)
-            print(torch.allclose(o_mean, r_mean))
-            print(torch.allclose(o_covariance, r_covariance))
+            print('cov', torch.allclose(o_covariance, r_covariance))
+            print('mean', torch.allclose(o_mean, r_mean))
+        else:
+            __test(dim, cov_batch, mean_batch, zero_mean=True)
 
-    __test(dim=5, zero_mean=False)
-    __test(dim=5, zero_mean=True)
+    __test(dim=5, cov_batch=0, mean_batch=0)
+    __test(dim=5, cov_batch=1, mean_batch=1)
+    __test(dim=5, cov_batch=3, mean_batch=3)
+    __test(dim=5, cov_batch=1, mean_batch=3)
+    __test(dim=5, cov_batch=3, mean_batch=1)
+    __test(dim=5, cov_batch=0, mean_batch=1)
+    __test(dim=5, cov_batch=1, mean_batch=0)
+    __test(dim=5, cov_batch=0, mean_batch=3)
+    __test(dim=5, cov_batch=3, mean_batch=0)
