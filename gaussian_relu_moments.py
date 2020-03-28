@@ -1,10 +1,8 @@
 from math import pi, sqrt
 
-import numpy as np
-import scipy.integrate
-import scipy.special
 import torch
-from torch.autograd import Function
+
+from erf_exp_integral import erf_exp_integral
 
 __all__ = [
     # main functions
@@ -16,42 +14,11 @@ __all__ = [
     'relu_std_mean',
     'relu_var',
     'relu_std',
-
-    # utility functions
     'rand_matrix',
-    'non_differentiable',
-    'numpy_erf_exp_integral',
-    'torch_erf_exp_integral',
 ]
 
 
-def non_differentiable(function):
-    """Decorate a function as non differentiable."""
-    name = function.__qualname__
-
-    @staticmethod
-    def forward(ctx, *args, **kwargs):  # pylint: disable=unused-argument
-        with torch.no_grad():
-            return function(*args, **kwargs)
-
-    return type(name, (Function,), {'forward': forward}).apply
-
-
-@np.vectorize
-def numpy_erf_exp_integral(a, b, c):
-    """Integrate `erf(a*x+b) * exp(-x**2)` from `c` to infinity in NumPy."""
-    f = lambda x: scipy.special.erf(a * x + b) * np.exp(-x**2)
-    return scipy.integrate.quad(f, c, np.inf)[0]
-
-
-@non_differentiable
-def torch_erf_exp_integral(a, b, c):
-    """Integrate `erf(a*x+b) * exp(-x**2)` from `c` to infinity in PyTorch."""
-    cpu = lambda tensor: tensor.detach().cpu().numpy()
-    return a.new(numpy_erf_exp_integral(cpu(a), cpu(b), cpu(c)))
-
-
-def relu_cov_mean(covariance, mean=None):
+def relu_cov_mean(covariance, mean=None, num_terms=0):
     """Compute the covariance and mean of ReLU(gaussian_vector)."""
     d = lambda x: x.diagonal(0, -1, -2)  # diagonal of a matrix
     t = lambda x: x.transpose(-1, -2)  # transpose of a matrix
@@ -94,7 +61,7 @@ def relu_cov_mean(covariance, mean=None):
     b = irho * mean_std.unsqueeze(-1)
     c = -mean_std.unsqueeze(-2)
     b[(irho == float('inf')).expand_as(b)] = 0
-    integration = torch_erf_exp_integral(a, b, c)
+    integration = erf_exp_integral(a, b, c, num_terms - 1)
 
     correlation = omega + (1 / sqrt(4 * pi)) * mean_sigma * integration
     second_moment = d(mean_sigma) * cdf + d(std_x_mean) * pdf
@@ -156,40 +123,3 @@ def rand_matrix(*shape, norm=None, trace=None, dtype=None, device=None):
     elif trace is not None:
         eigen *= trace / eigen.sum(dim=-1, keepdim=True)
     return (q * eigen.unsqueeze(-2)) @ q.transpose(-1, -2)
-
-
-if __name__ == '__main__':
-
-    def __test(dim, cov_batch=0, mean_batch=0, zero_mean=False):
-        print(dict(cbatch=cov_batch, mbatch=mean_batch, zmean=zero_mean))
-        cbatch = () if cov_batch == 0 else (cov_batch,)
-        mbatch = () if mean_batch == 0 else (mean_batch,)
-        covariance = rand_matrix(*cbatch, dim, dtype=torch.float64)
-        std = covariance.diagonal(0, -1, -2).sqrt()
-        mean = std.new(*mbatch, dim) * (not zero_mean)
-
-        r_covariance, r_mean = relu_cov_mean(covariance, mean)
-
-        o_mean = relu_mean(std, None if zero_mean else mean)
-        print('mean', torch.allclose(o_mean, r_mean))
-
-        o_var, o_mean = relu_var_mean(std, None if zero_mean else mean)
-        print('var', torch.allclose(o_var, r_covariance.diagonal(0, -1, -2)))
-        print('mean', torch.allclose(o_mean, r_mean))
-
-        if zero_mean:
-            o_covariance, o_mean = relu_cov_mean(covariance)
-            print('cov', torch.allclose(o_covariance, r_covariance))
-            print('mean', torch.allclose(o_mean, r_mean))
-        else:
-            __test(dim, cov_batch, mean_batch, zero_mean=True)
-
-    __test(dim=5, cov_batch=0, mean_batch=0)
-    __test(dim=5, cov_batch=1, mean_batch=1)
-    __test(dim=5, cov_batch=3, mean_batch=3)
-    __test(dim=5, cov_batch=1, mean_batch=3)
-    __test(dim=5, cov_batch=3, mean_batch=1)
-    __test(dim=5, cov_batch=0, mean_batch=1)
-    __test(dim=5, cov_batch=1, mean_batch=0)
-    __test(dim=5, cov_batch=0, mean_batch=3)
-    __test(dim=5, cov_batch=3, mean_batch=0)
