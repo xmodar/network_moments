@@ -1,7 +1,7 @@
 import torch
 
-from gaussian_relu_moments import (rand_matrix, relu_cov_mean, relu_mean,
-                                   relu_var_mean)
+from gaussian_relu_moments import relu_cov_mean, relu_mean, relu_var_mean
+from stat_utils import rand_matrix
 
 
 def cov_mean(dim, cov_batch=0, mean_batch=0, zero_mean=False):

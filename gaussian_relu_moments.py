@@ -1,7 +1,5 @@
 from math import pi, sqrt
 
-import torch
-
 from erf_exp_integral import erf_exp_integral
 
 __all__ = [
@@ -12,13 +10,10 @@ __all__ = [
 
     # auxiliary functions
     'relu_std_mean',
+    'relu_cov',
     'relu_var',
     'relu_std',
-
-    # utility functions
-    'gaussian_distribution',
-    'rand_matrix',
-    'cov_mean',
+    'forward_gaussian',
 ]
 
 
@@ -107,6 +102,11 @@ def relu_std_mean(std, mean=None):
     return variance.sqrt(), mean
 
 
+def relu_cov(covariance, mean=None, num_terms=0):
+    """Compute the covariance of ReLU(gaussian_vector)."""
+    return relu_cov_mean(covariance, mean, num_terms)[0]
+
+
 def relu_var(std, mean=None):
     """Compute the variance of ReLU(gaussian_vector)."""
     return relu_var_mean(std, mean)[0]
@@ -117,36 +117,16 @@ def relu_std(std, mean=None):
     return relu_var_mean(std, mean)[0].sqrt()
 
 
-def rand_matrix(*shape, norm=None, trace=None, dtype=None, device=None):
-    """Generate a random positive definite matrix."""
-    assert None in (norm, trace), 'provide only a norm or a trace or neither'
-    eigen = 1 - torch.rand(*shape, dtype=dtype, device=device)
-    q = eigen.new(*eigen.shape, eigen.shape[-1]).normal_().qr().Q
-    if norm is not None:
-        eigen *= norm / eigen.norm(dim=-1, keepdim=True)
-    elif trace is not None:
-        eigen *= trace / eigen.sum(dim=-1, keepdim=True)
-    return (q * eigen.unsqueeze(-2)) @ q.transpose(-1, -2)
-
-
-def gaussian_distribution(covariance, mean=None):
-    """Wrap torch.distributions.MultivariateNormal to any sample shape."""
-    if not torch.is_tensor(covariance):
-        covariance = rand_matrix(covariance)
-    if mean is None:
-        mean = covariance.new_zeros(covariance.shape[-1])
-    dist = torch.distributions.MultivariateNormal(mean.view(-1), covariance)
-    dist.draw = lambda *batch: dist.sample(batch).view(*batch, *mean.shape)
-    dist.center = mean
-    return dist
-
-
-def cov_mean(samples, unbiased=False, keepdim=False):
-    """Compute the covariance matrix and mean of data samples."""
-    mean = samples.mean(0, keepdim=True)
-    factor = 1 / (samples.shape[0] - bool(unbiased))
-    samples = samples - mean
-    covariance = factor * (samples.transpose(-1, -2) @ samples)
-    if keepdim:
-        return covariance.unsqueeze(0), mean
-    return covariance, mean.squeeze(0)
+def forward_gaussian(model, covariance, mean, terms=5):
+    """Compute variance and mean of Affine-ReLU-Affine for gaussian input."""
+    a, _, b = model  # assumes Sequential(Linear, ReLU, Linear)
+    covariance, mean = a.weight @ covariance @ a.weight.t(), a(mean)
+    if terms >= 0:
+        covariance, mean = relu_cov_mean(covariance, mean, terms)
+    else:  # assume zero mean relu input to compute off-diagonals
+        std = covariance.diagonal(0, -1, -2).sqrt()
+        variance, mean = relu_var_mean(std, mean)
+        covariance = relu_cov(covariance)
+        covariance.diagonal(0, -1, -2).copy_(variance)
+    variance, mean = ((b.weight @ covariance) * b.weight).sum(-1), b(mean)
+    return variance, mean
