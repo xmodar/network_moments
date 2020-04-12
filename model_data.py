@@ -1,6 +1,8 @@
 from pathlib import Path
 
 import torch
+from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
 from torch import nn
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
@@ -88,3 +90,37 @@ def get_mnist_lenet(checkpoint='./mnist_lenet.pt', device=None, epochs=3):
         train_classifier(epochs, model, train_loader, test_loader, device)
         torch.save(model.state_dict(), checkpoint)
     return model
+
+
+def interleaved_indices(labels, random=False):
+    """Get label-interleaved indices."""
+    assert labels.ndim == 1 and not labels.is_floating_point()
+    indices = map(lambda i: (labels == i).nonzero(), labels.unique())
+    if random:
+        indices = map(lambda x: x[torch.randperm(len(x))], indices)
+    # round-robin over the labels
+    indices = tuple(indices)
+    n = max(len(x) for x in indices)
+    pad = lambda x: torch.cat([x.new(n - len(x)).fill_(-1), x.flatten()])
+    indices = torch.stack(tuple(map(pad, indices)), dim=1).flatten()
+    return indices[indices >= 0]
+
+
+def labeled_kmeans(features, labels, k, pca=None, random=True):
+    """Get k-means initialized by centers round-robin-sampled per label."""
+    assert features.device.type == labels.device.type == 'cpu'
+    if torch.is_grad_enabled():
+        assert features.requires_grad == labels.requires_grad == False
+    dtype, shape = features.dtype, features.shape[1:]
+    features = features.flatten(1)
+    if pca is not None:
+        pca = PCA(n_components=pca)
+        features = pca.fit_transform(features)
+    centers = features[interleaved_indices(labels, random)[:k]]
+    kmeans = KMeans(k, centers, 1).fit(features)
+    centers = kmeans.cluster_centers_
+    if pca is not None:
+        centers = pca.inverse_transform(centers)
+    centers = torch.from_numpy(centers).to(dtype).view(-1, *shape)
+    labels = torch.from_numpy(kmeans.labels_).to(labels.dtype).flatten()
+    return centers, labels

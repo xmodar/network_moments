@@ -3,13 +3,11 @@ from random import choice
 
 import matplotlib.pyplot as plt
 import torch
-from sklearn.cluster import KMeans
-from sklearn.decomposition import PCA
 from torchvision.utils import make_grid
 from tqdm import tqdm
 
 from gaussian_relu_moments import forward_gaussian
-from model_data import get_mnist, get_mnist_lenet
+from model_data import get_mnist, get_mnist_lenet, labeled_kmeans
 from relu_linearize import relu_linearize
 from stat_utils import VarianceMeter, gaussian, rand_matrix
 
@@ -93,29 +91,22 @@ def table_3(clusters, baseline, trace, num_samples=1e4, terms=5):
     name = str(clusters) + (' baseline' if baseline else '')
     print(f'Table 3 [{name} @ {Fraction(trace).limit_denominator()}]')
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    mnist = get_mnist()[1]  # testing set
     model = get_mnist_lenet(device=device).eval()
-    print('MNIST', end='... ')
-    mnist = torch.stack([x for x, _ in get_mnist()[1]], dim=0)  # testing set
-    print('PCA', end='... ')
-    pca = PCA(n_components=40)
-    pca_mnist = pca.fit_transform(mnist.flatten(1))
-    print('KMeans', end='... ')
-    kmeans = KMeans(clusters, random_state=42).fit(pca_mnist)
-    print('Done!')
-    centers = torch.from_numpy(pca.inverse_transform(kmeans.cluster_centers_))
-    centers = centers.to(mnist.dtype).view(-1, *mnist.shape[1:])
+    images = mnist.data.float().div_(255).unsqueeze(1)
+    centers, labels = labeled_kmeans(images, mnist.targets, clusters)
     if baseline:
         centers = torch.stack([
-            images[distance.argmax()] for c in range(clusters)
-            for images in [mnist[kmeans.labels_ == c]]
-            for distance in [(images - centers[c]).flatten(1).norm(dim=1)]
+            cluster[distance.argmax()] for c in range(clusters)
+            for cluster in [images[labels == c]]
+            for distance in [(cluster - centers[c]).flatten(1).norm(dim=1)]
         ], 0)
-    mnist, centers = mnist.to(device), centers.to(device)
+    images, centers = images.to(device), centers.to(device)
     votes = VarianceMeter(unbiased=True)
     bad_ratio = VarianceMeter(unbiased=True)
     var_ratio = VarianceMeter(unbiased=True)
     mean_ratio = VarianceMeter(unbiased=True)
-    for c, mean in zip(tqdm(kmeans.labels_), mnist):
+    for c, mean in zip(tqdm(labels), images):
         cov = rand_matrix(mean.numel(), trace=trace, device=device)
         dist = gaussian(cov, mean)
         lin = relu_linearize(model, centers[c])
