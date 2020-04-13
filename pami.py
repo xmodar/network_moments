@@ -1,15 +1,14 @@
+from collections import defaultdict
 from fractions import Fraction
-from random import choice
+from pathlib import Path
 
-import matplotlib.pyplot as plt
 import torch
-from torchvision.utils import make_grid
 from tqdm import tqdm
 
 from gaussian_relu_moments import forward_gaussian
 from model_data import get_mnist, get_mnist_lenet, labeled_kmeans
 from relu_linearize import relu_linearize
-from stat_utils import VarianceMeter, gaussian, rand_matrix
+from stat_utils import gaussian, rand_matrix
 
 
 def popular_vote(logits):
@@ -17,44 +16,23 @@ def popular_vote(logits):
     return y.histc(y.shape[-1]).max().item() / y.shape[0]
 
 
-def plot_samples(samples, row_length=3, normalize=True, show=True, ax=None):
-    samples = samples.data.cpu()
-    samples = make_grid(samples, row_length, 2, normalize)
-    if ax is None:
-        fig, ax = plt.subplots(figsize=(7, 7))
-    ax.imshow(samples.clamp_(0, 1).permute(1, 2, 0))
-    ax.axis('off')
-    if show:
-        plt.show(fig)
-    return ax
-
-
-def error(a, b, rtol=1e-5, atol=1e-8):
-    return ((a - b).abs() - (atol + rtol * b.abs())).clamp_(0)
-
-
-def gist(mean_ratio, bad_ratio, var_ratio, votes):
-    mr = (mean_ratio.mean.tolist(), mean_ratio.std.tolist())
-    print('mean ratios')
-    print([round(x, 4) for x in mr[0]])
-    print([round(x, 4) for x in mr[1]])
-    print()
-    br = (bad_ratio.mean.tolist(), bad_ratio.std.tolist())
-    print('bad var ratios')
-    print([round(x, 4) for x in br[0]])
-    print([round(x, 4) for x in br[1]])
-    print()
-    vr = (var_ratio.mean.tolist(), var_ratio.std.tolist())
-    print('good var ratios')
-    print([round(x, 4) for x in vr[0]])
-    print([round(x, 4) for x in vr[1]])
-    print()
-    vt = (votes.mean, votes.std)
-    print('votes')
-    print(f'{vt[0] * 100:.2f}%')
-    print(f'{vt[1] * 100:.2f}%')
-    print()
-    return dict(mean_ratio=mr, bad_ratio=br, var_ratio=br, votes=vt)
+def evaluate(model, images, points, trace, samples=1e4, terms=5):
+    results = defaultdict(list)
+    for mean, point in zip(tqdm(images), points):
+        lin = relu_linearize(model, point)
+        cov = rand_matrix(mean.numel(), trace=trace, device=mean.device)
+        with torch.no_grad():
+            logits = model(gaussian(cov, mean).draw(int(samples)))
+            out_var, out_mean = torch.var_mean(logits, dim=0, unbiased=False)
+            fg_var, fg_mean = forward_gaussian(lin, cov, mean.flatten(), terms)
+            fg_bad = forward_gaussian(lin, cov, mean.flatten(), -1)[0]
+        results['votes'].append(popular_vote(logits))
+        results['out_mean'].append(out_mean)
+        results['out_var'].append(out_var)
+        results['fg_mean'].append(fg_mean)
+        results['fg_var'].append(fg_var)
+        results['fg_bad'].append(fg_bad)
+    return results
 
 
 def table_2(trials, trace, num_samples=1e4, terms=5):
@@ -62,29 +40,10 @@ def table_2(trials, trace, num_samples=1e4, terms=5):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     mnist = get_mnist()[1]  # testing set
     model = get_mnist_lenet(device=device).eval()
-    votes = VarianceMeter(unbiased=True)
-    bad_ratio = VarianceMeter(unbiased=True)
-    var_ratio = VarianceMeter(unbiased=True)
-    mean_ratio = VarianceMeter(unbiased=True)
-    if trials < 1:
-        data = (x.to(device) for x, _ in tqdm(mnist))
-    else:
-        data = (choice(mnist)[0].to(device) for _ in tqdm(range(trials)))
-    for mean in data:
-        cov = rand_matrix(mean.numel(), trace=trace, device=device)
-        dist = gaussian(cov, mean)
-        lin = relu_linearize(model, mean)
-        with torch.no_grad():
-            logits = model(dist.draw(int(num_samples)))
-            m_var, m_mean = torch.var_mean(logits, dim=0, unbiased=False)
-            l_var, l_mean = forward_gaussian(lin, cov, mean.view(-1), terms)
-            b_var, _ = forward_gaussian(lin, cov, mean.view(-1), -1)
-            vote = popular_vote(logits)
-        votes.update(vote)
-        bad_ratio.update(b_var / m_var)
-        var_ratio.update(l_var / m_var)
-        mean_ratio.update(l_mean / m_mean)
-    return mean_ratio, bad_ratio, var_ratio, votes
+    images = mnist.data.float().div_(255).unsqueeze(1).to(device)
+    if trials > 0:
+        images = images[torch.randperm(len(images))[:trials]]
+    return evaluate(model, images, images, trace, num_samples, terms)
 
 
 def table_3(clusters, baseline, trace, num_samples=1e4, terms=5):
@@ -102,38 +61,29 @@ def table_3(clusters, baseline, trace, num_samples=1e4, terms=5):
             for distance in [(cluster - centers[c]).flatten(1).norm(dim=1)]
         ], 0)
     images, centers = images.to(device), centers.to(device)
-    votes = VarianceMeter(unbiased=True)
-    bad_ratio = VarianceMeter(unbiased=True)
-    var_ratio = VarianceMeter(unbiased=True)
-    mean_ratio = VarianceMeter(unbiased=True)
-    for c, mean in zip(tqdm(labels), images):
-        cov = rand_matrix(mean.numel(), trace=trace, device=device)
-        dist = gaussian(cov, mean)
-        lin = relu_linearize(model, centers[c])
-        with torch.no_grad():
-            logits = model(dist.draw(int(num_samples)))
-            m_var, m_mean = torch.var_mean(logits, dim=0, unbiased=False)
-            l_var, l_mean = forward_gaussian(lin, cov, mean.view(-1), terms)
-            b_var, _ = forward_gaussian(lin, cov, mean.view(-1), -1)
-            vote = popular_vote(logits)
-        votes.update(vote)
-        bad_ratio.update(b_var / m_var)
-        var_ratio.update(l_var / m_var)
-        mean_ratio.update(l_mean / m_mean)
-    return mean_ratio, bad_ratio, var_ratio, votes
+    points = map(lambda i: centers[i], labels)
+    return evaluate(model, images, points, trace, num_samples, terms)
 
 
 def run_all(trace):
-    results = {}
-    results['t2'] = gist(*table_2(0, trace))
-    results['t3_250_baseline'] = gist(*table_3(250, True, trace))
-    results['t3_250'] = gist(*table_3(250, False, trace))
-    results['t3_500_baseline'] = gist(*table_3(500, True, trace))
-    results['t3_500'] = gist(*table_3(500, False, trace))
-    results['t3_1000'] = gist(*table_3(1000, False, trace))
-    results['t3_2500'] = gist(*table_3(2500, False, trace))
-    results['t3_5000'] = gist(*table_3(5000, False, trace))
-    return results
+    path = Path(str(trace))
+    path.mkdir(parents=True, exist_ok=True)
+    if not (path / 't2.pt').exists():
+        torch.save(table_2(0, trace), path / 't2.pt')
+    if not (path / 't3_250_baseline.pt').exists():
+        torch.save(table_3(250, True, trace), path / 't3_250_baseline.pt')
+    if not (path / 't3_250.pt').exists():
+        torch.save(table_3(250, False, trace), path / 't3_250.pt')
+    if not (path / 't3_500_baseline.pt').exists():
+        torch.save(table_3(500, True, trace), path / 't3_500_baseline.pt')
+    if not (path / 't3_500.pt').exists():
+        torch.save(table_3(500, False, trace), path / 't3_500.pt')
+    if not (path / 't3_1000.pt').exists():
+        torch.save(table_3(1000, False, trace), path / 't3_1000.pt')
+    if not (path / 't3_2500.pt').exists():
+        torch.save(table_3(2500, False, trace), path / 't3_2500.pt')
+    if not (path / 't3_5000.pt').exists():
+        torch.save(table_3(5000, False, trace), path / 't3_5000.pt')
 
 
 if __name__ == '__main__':
